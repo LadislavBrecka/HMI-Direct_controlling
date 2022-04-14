@@ -184,7 +184,8 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    boolean isRotating = false;
+
+    int direction = 0;
     void RobotSetTranslationSpeed(float speed);
     void RobotSetRotationSpeed(float speed);
 

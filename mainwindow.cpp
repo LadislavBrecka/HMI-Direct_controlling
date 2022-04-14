@@ -14,6 +14,33 @@
 #include <QCoreApplication>
 #include <QtConcurrent/QtConcurrent>
 
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    if(event->key() == Qt::Key_W)
+    {
+        RobotSetTranslationSpeed(350.0f);
+    }
+
+    if(event->key() == Qt::Key_A)
+    {
+        RobotSetRotationSpeed(PI/4.0f);
+    }
+
+    if(event->key() == Qt::Key_S)
+    {
+        RobotSetTranslationSpeed(0.0f);
+    }
+
+    if(event->key() == Qt::Key_D)
+    {
+        RobotSetRotationSpeed(-PI/4.0f);
+    }
+
+    if(event->key() == Qt::Key_X)
+    {
+        RobotSetTranslationSpeed(-350.0f);
+    }
+}
 
 //funkcia local robot je na priame riadenie robota, ktory je vo vasej blizskoti, viete si z dat ratat polohu atd (zapnutie dopravneho oneskorenia sposobi opozdenie dat oproti aktualnemu stavu robota)
 void MainWindow::localrobot(TKobukiData &sens)
@@ -78,13 +105,10 @@ void MainWindow::localrobot(TKobukiData &sens)
     x_prev = x;
     y_prev = y;
 
-    std::cout << sens.EncoderRight << ", " << sens.EncoderLeft << std::endl;
-    std::cout << x << ", " << y << std::endl;
-
     ///toto je skaredy kod. rozumne je to posielat do ui cez signal slot..
-    ui->lineEdit->setText(QString::number(x));
-    ui->lineEdit_2->setText(QString::number(y));
-    ui->lineEdit_3->setText(QString::number(f_k));
+//    ui->lineEdit->setText(QString::number(x));
+//    ui->lineEdit_2->setText(QString::number(y));
+//    ui->lineEdit_3->setText(QString::number(f_k));
 }
 
 // funkcia local laser je naspracovanie dat z lasera(zapnutie dopravneho oneskorenia sposobi opozdenie dat oproti aktualnemu stavu robota)
@@ -175,13 +199,19 @@ void MainWindow::paintEvent(QPaintEvent *event)
     int skeletonWidth  = skeletonBottomRight.x() - skeletonTopLeft.x();
     int skeletonHeight = skeletonBottomRight.y() - skeletonTopLeft.y();
 
-    // draw main camera
-    QImage imgIn = QImage((uchar*) robotPicture.data, robotPicture.cols, robotPicture.rows, robotPicture.step, QImage::Format_BGR888);
-    painter.drawImage(mainRect ,imgIn,imgIn.rect());
-
     // draw lidar integration
     painter.setPen(pero);
     float q_dist[8] = {100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
+
+    bool draw_robot = true;
+    bool wallNear = false;
+    int x1,x2,y1,y2;
+
+    float max_w = 25.0f;
+    float min_w = 4.0f;
+    float max_d = 0.7f;
+    float min_d = 0.15f;
+    float warn_d = 0.35;
 
     for(int k=0;k<paintLaserData.numberOfScans;k++)
     {
@@ -208,9 +238,57 @@ void MainWindow::paintEvent(QPaintEvent *event)
                 if (x_obr >= 640 || y_obr >= 480 || x_obr < 0 || y_obr < 0) continue;
 
                 // change color according to distance
-                cv::floodFill(robotPicture, cv::Point(x_obr, y_obr), cv::Scalar(dist_color, dist_color, 255.0), 0, cv::Scalar(25, 25, 25), cv::Scalar(30, 30, 30));
-                QImage imgIn = QImage((uchar*) robotPicture.data, robotPicture.cols, robotPicture.rows, robotPicture.step, QImage::Format_BGR888);
-                painter.drawImage(mainRect ,imgIn,imgIn.rect());
+                cv::floodFill(robotPicture, cv::Point(x_obr, y_obr), cv::Scalar(dist_color, dist_color, 255.0), 0, cv::Scalar(15, 15, 15), cv::Scalar(25, 25, 25));
+
+                if (D < warn_d && !wallNear)
+                {
+                    cv::putText(robotPicture, //target image
+                            "WALL", //text
+                            cv::Point(x_obr, robotPicture.rows / 2), //top-left position
+                            cv::FONT_HERSHEY_DUPLEX,
+                            1.0,
+                            CV_RGB(255, 0, 0), //font color
+                            2);
+                    wallNear = true;
+                }
+            }
+        }
+
+        if (D < warn_d && D > 0.1 && !wallNear)
+        {
+            if (a <= 120)
+            {
+                cv::putText(robotPicture, //target image
+                        "!!", //text
+                        cv::Point(15, robotPicture.rows / 2), //top-left position
+                        cv::FONT_HERSHEY_DUPLEX,
+                        1.0,
+                        CV_RGB(255, 0, 0), //font color
+                        2);
+                wallNear = true;
+            }
+            if (a >120 && a<210)
+            {
+                cv::putText(robotPicture, //target image
+                        "!!", //text
+                        cv::Point(robotPicture.cols/2.0f, robotPicture.rows - 25), //top-left position
+                        cv::FONT_HERSHEY_DUPLEX,
+                        1.0,
+                        CV_RGB(255, 0, 0), //font color
+                        2);
+                wallNear = true;
+            }
+
+            if (a >= 210)
+            {
+                cv::putText(robotPicture, //target image
+                        "!!", //text
+                        cv::Point(robotPicture.cols-50, robotPicture.rows / 2), //top-left position
+                        cv::FONT_HERSHEY_DUPLEX,
+                        1.0,
+                        CV_RGB(255, 0, 0), //font color
+                        2);
+                wallNear = true;
             }
         }
 
@@ -228,6 +306,20 @@ void MainWindow::paintEvent(QPaintEvent *event)
         int xp   = lidarBottomRight.x() - (lidarWidth  / 2 + dist * sin((360.0 - paintLaserData.Data[k].scanAngle) * 3.14159 / 180.0));
         int yp   = lidarBottomRight.y() - (lidarHeight / 2 + dist * cos((360.0 - paintLaserData.Data[k].scanAngle) * 3.14159 / 180.0));
 
+        if (draw_robot)
+        {
+            int xp   = lidarBottomRight.x() - (lidarWidth  / 2 + 0.0 * sin((360.0 - 0.0) * 3.14159 / 180.0));
+            int yp   = lidarBottomRight.y() - (lidarHeight / 2 + 0.0 * cos((360.0 - 0.0) * 3.14159 / 180.0));
+
+            float xp_2 = xp + 0.0f;
+            float yp_2 = yp - 15.0f;
+
+            painter.setPen(QPen(Qt::blue));
+            painter.drawLine(QLine(QPoint(xp, yp), QPoint(xp_2, yp_2)));
+            painter.drawEllipse(QPoint(xp, yp), 6, 6);
+            draw_robot = false;
+        }
+
         // painting lidar points to standalone frame
         if(xp < lidarBottomRight.x() && xp > lidarTopLeft.x() && yp < lidarBottomRight.y() && yp > lidarTopLeft.y())
         {
@@ -237,27 +329,63 @@ void MainWindow::paintEvent(QPaintEvent *event)
         }
     }
 
-    int x1,x2,y1,y2;
-    bool wallNear = false;
-    float max_w = 15.0f;
-    float min_w = 0.0f;
-    float max_d = 0.7f;
-    float min_d = 0.15f;
-    float warn_d = 0.35;
+    switch(direction)
+    {
+        case 1:
+            cv::putText(robotPicture, //target image
+                    "FORWARD", //text
+                    cv::Point(robotPicture.cols/2.0f-20.0, 40.0f), //top-left position
+                    cv::FONT_HERSHEY_DUPLEX,
+                    0.6,
+                    CV_RGB(220, 220, 220), //font color
+                    2);
+            break;
+
+        case 2:
+            cv::putText(robotPicture, //target image
+                    "BACKWARD", //text
+                    cv::Point(robotPicture.cols/2.0f-20.0f, 40.0f), //top-left position
+                    cv::FONT_HERSHEY_DUPLEX,
+                    0.6,
+                    CV_RGB(220, 220, 220), //font color
+                    2);
+            break;
+
+        case 3:
+            cv::putText(robotPicture, //target image
+                    "LEFT", //text
+                    cv::Point(15.0f, 40.0f), //top-left position
+                    cv::FONT_HERSHEY_DUPLEX,
+                    0.6,
+                    CV_RGB(220, 220, 220), //font color
+                    2);
+            break;
+
+        case 4:
+            cv::putText(robotPicture, //target image
+                    "RIGHT", //text
+                    cv::Point(robotPicture.cols-70.0f, 40.0f), //top-left position
+                    cv::FONT_HERSHEY_DUPLEX,
+                    0.6,
+                    CV_RGB(220, 220, 220), //font color
+                    2);
+            break;
+    }
+
+    // draw main camera
+    QImage imgIn = QImage((uchar*) robotPicture.data, robotPicture.cols, robotPicture.rows, robotPicture.step, QImage::Format_BGR888);
+    painter.drawImage(mainRect ,imgIn,imgIn.rect());
 
     // 1. kvadrant - pred robotom
     if (q_dist[0] != 100.0 && q_dist[7] != 100.0)
     {
-       x1 = mainRect.topLeft().x()     + 8;
-       x2 = mainRect.bottomRight().x() - 5;
-       y1 = mainRect.topLeft().y()     + 6;
-       y2 = mainRect.topLeft().y()     + 6;
+       x1 = mainRect.topLeft().x()     + 12;
+       x2 = mainRect.bottomRight().x() - 9;
+       y1 = mainRect.topLeft().y()     + 8;
+       y2 = mainRect.topLeft().y()     + 8;
 
        float d = q_dist[0] > q_dist[7] ? q_dist[7] : q_dist[0];
        float dist_color = (((d - min_d) * max_w) / (max_d - min_d)) + min_w;
-
-       if (d < warn_d)
-           wallNear = true;
 
        painter.setPen(QPen(Qt::red, max_w - dist_color));
        painter.drawLine(QLine(x1, y1, x2, y2));
@@ -266,17 +394,14 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // 2. kvadrant - vlavo od robota
     if (q_dist[0] != 100.0 || q_dist[1] != 100.0 || q_dist[2] != 100.0)
     {
-        x1 = mainRect.topLeft().x()     + 5;
-        x2 = mainRect.topLeft().x()     + 5;
-        y1 = mainRect.topLeft().y()     + 8;
-        y2 = mainRect.bottomRight().y() - 4;
+        x1 = mainRect.topLeft().x()     + 7;
+        x2 = mainRect.topLeft().x()     + 7;
+        y1 = mainRect.topLeft().y()     + 12;
+        y2 = mainRect.bottomRight().y() - 8;
 
         float d = min(q_dist[0], q_dist[1]);
         d = min(d, q_dist[2]);
         float dist_color = (((d - min_d) * max_w) / (max_d - min_d)) + min_w;
-
-        if (d < warn_d)
-            wallNear = true;
 
         painter.setPen(QPen(Qt::red, max_w - dist_color));
         painter.drawLine(QLine(x1, y1, x2, y2));
@@ -285,16 +410,13 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // 3. kvadrant - za robotom
     if (q_dist[3] != 100.0 && q_dist[4] != 100.0)
     {
-       x1 = mainRect.topLeft().x()     + 8;
-       x2 = mainRect.bottomRight().x() - 5;
-       y1 = mainRect.bottomRight().y() - 3;
-       y2 = mainRect.bottomRight().y() - 3;
+       x1 = mainRect.topLeft().x()     + 12;
+       x2 = mainRect.bottomRight().x() - 9;
+       y1 = mainRect.bottomRight().y() - 5;
+       y2 = mainRect.bottomRight().y() - 5;
 
        float d = q_dist[3] > q_dist[4] ? q_dist[4] : q_dist[3];
        float dist_color = (((d - min_d) * max_w) / (max_d - min_d)) + min_w;
-
-       if (d < warn_d)
-           wallNear = true;
 
        painter.setPen(QPen(Qt::red, max_w - dist_color));
        painter.drawLine(QLine(x1, y1, x2, y2));
@@ -303,43 +425,17 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // 4. kvadrant - vpravo od robota
     if (q_dist[5] != 100.0 || q_dist[6] != 100.0 || q_dist[7] != 100.0)
     {
-       x1 = mainRect.bottomRight().x() - 4;
-       x2 = mainRect.bottomRight().x() - 4;
-       y1 = mainRect.topLeft().y()     + 8;
-       y2 = mainRect.bottomRight().y() - 5;
+       x1 = mainRect.bottomRight().x() - 6;
+       x2 = mainRect.bottomRight().x() - 6;
+       y1 = mainRect.topLeft().y()     + 12;
+       y2 = mainRect.bottomRight().y() - 9;
 
        float d = min(q_dist[5], q_dist[6]);
        d = min(d, q_dist[7]);
        float dist_color = (((d - min_d) * max_w) / (max_d - min_d)) + min_w;
 
-       if (d < warn_d)
-           wallNear = true;
-
        painter.setPen(QPen(Qt::red, max_w - dist_color));
        painter.drawLine(QLine(x1, y1, x2, y2));
-    }
-
-    if (wallNear)
-    {
-        ui->lineEdit_4->setText("WALL!");
-        QPalette palette;
-        palette.setColor(QPalette::Base,Qt::red);
-        palette.setColor(QPalette::Text,Qt::white);
-        ui->lineEdit_4->setPalette(palette);
-        if (safe_stop == 0)
-        {
-            RobotSetTranslationSpeed(0.0f);
-        }
-        safe_stop += 1;
-    }
-    else
-    {
-        QPalette palette;
-        palette.setColor(QPalette::Base,Qt::white);
-        palette.setColor(QPalette::Text,Qt::black);
-        ui->lineEdit_4->setPalette(palette);
-        ui->lineEdit_4->setText("FREE");
-        safe_stop = 0;
     }
 
     // skeleton drawing
@@ -411,50 +507,46 @@ void MainWindow::paintEvent(QPaintEvent *event)
     bool left_index_pointing = (index_1_angle > 160 && index_1_angle <= 160) || (index_1_angle < -160 && index_1_angle > -180);
     bool right_index_pointing = (index_2_angle > -20 && index_2_angle < 0) || (index_2_angle < 20 && index_2_angle > 0);
 
-    if  (use_skeleton)
+    // stop
+    if (left_hand_fist || right_hand_fist || no_left_hand || no_right_hand)
     {
-        // stop
-        if (left_hand_fist || right_hand_fist || no_left_hand || no_right_hand)
-        {
-            RobotSetTranslationSpeed(0.0f);
-        }
+        RobotSetTranslationSpeed(0.0f);
+    }
 
-        // dopredu
-        else if (left_thumb_up && right_thumb_up)
-        {
-            RobotSetTranslationSpeed(100.0f);
-        }
+    // dopredu
+    else if (left_thumb_up && right_thumb_up)
+    {
+        RobotSetTranslationSpeed(100.0f);
+    }
 
-        // dozadu
-        else if (left_index_up && right_index_up)
-        {
-            RobotSetTranslationSpeed(-100.0f);
-        }
+    // dozadu
+    else if (left_index_up && right_index_up)
+    {
+        RobotSetTranslationSpeed(-100.0f);
+    }
 
-        // doprava
-        else if (left_thumb_up && left_index_pointing && right_hand_open)
-        {
-            RobotSetRotationSpeed(-PI/8);
-        }
+    // doprava
+    else if (left_thumb_up && left_index_pointing && right_hand_open)
+    {
+        RobotSetRotationSpeed(-PI/8);
+    }
 
-        // dolava
-        else if (right_thumb_up && right_index_pointing && left_hand_open)
-        {
-            RobotSetRotationSpeed(PI/8);
-        }
+    // dolava
+    else if (right_thumb_up && right_index_pointing && left_hand_open)
+    {
+        RobotSetRotationSpeed(PI/8);
     }
 }
 
 void MainWindow::RobotSetTranslationSpeed(float speed)
 {
-    isRotating = false;
     if (speed > 0.0)
-        ui->lineEdit_6->setText("FORWARD");
+       direction = 1;
     else if (speed < 0.0)
-        ui->lineEdit_6->setText("BACKWARD");
+        direction = 2;
     else
-        ui->lineEdit_6->setText("STOPPED");
-    //pohyb dopredu
+        direction = 0;
+
     std::vector<unsigned char> mess=robot.setTranslationSpeed(speed);
     if (sendto(rob_s, (char*)mess.data(), sizeof(char)*mess.size(), 0, (struct sockaddr*) &rob_si_posli, rob_slen) == -1)
     {
@@ -464,15 +556,12 @@ void MainWindow::RobotSetTranslationSpeed(float speed)
 
 void MainWindow::RobotSetRotationSpeed(float speed)
 {
-    if (speed != 0.0)
-        isRotating = true;
-
     if (speed > 0.0)
-        ui->lineEdit_6->setText("LEFT TURN");
+       direction = 3;
     else if (speed < 0.0)
-        ui->lineEdit_6->setText("RIGHT TURN");
+        direction = 4;
     else
-        ui->lineEdit_6->setText("STOPPED");
+        direction = 0;
 
     std::vector<unsigned char> mess=robot.setRotationSpeed(speed);
     if (sendto(rob_s, (char*)mess.data(), sizeof(char)*mess.size(), 0, (struct sockaddr*) &rob_si_posli, rob_slen) == -1)
@@ -520,18 +609,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
 
         Imager.start();
-
-}
-
-///funkcia co sa zavola ked stlacite klavesu na klavesnici..
-/// pozor, ak niektory widget akceptuje klavesu, sem sa nemusite (ale mozete) dostat
-/// zalezi na to ako konkretny widget spracuje svoj event
-void MainWindow::keyPressEvent(QKeyEvent* event)
-{
-    //pre pismena je key ekvivalent ich ascii hodnoty
-    //pre ine klavesy pozrite tu: https://doc.qt.io/qt-5/qt.html#Key-enum
-    std::cout<<event->key()<<std::endl;
-
 
 }
 //--cokolvek za tymto vas teoreticky nemusi zaujimat, su tam len nejake skarede kody
